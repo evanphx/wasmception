@@ -2,13 +2,13 @@
 # http://creativecommons.org/publicdomain/zero/1.0/
 
 ROOT_DIR=${CURDIR}
-LLVM_REV=344317
-CLANG_REV=344318
-LLD_REV=344318
-MUSL_SHA=edeb5004e6e016e326c475ce53199755d76d103f
-COMPILER_RT_REV=344320
-LIBCXX_REV=344320
-LIBCXXABI_REV=344320
+#LLVM_REV=344317
+#CLANG_REV=344318
+#LLD_REV=344318
+#MUSL_SHA=edeb5004e6e016e326c475ce53199755d76d103f
+#COMPILER_RT_REV=344320
+#LIBCXX_REV=344320
+#LIBCXXABI_REV=344320
 
 
 VERSION=0.1
@@ -37,14 +37,24 @@ endif
 	touch src/llvm.CLONED
 
 src/musl.CLONED:
+	$(error not supported)
 	mkdir -p src/
 	cd src/; git clone https://github.com/jfbastien/musl.git
 ifdef MUSL_SHA
 	cd src/musl; git checkout $(MUSL_SHA)
 endif
 	cd src/musl; patch -p 1 < $(ROOT_DIR)/patches/musl.1.patch
-	cd src/musl; patch -p 1 < $(ROOT_DIR)/patches/musl.2.patch
+#	cd src/musl; patch -p 1 < $(ROOT_DIR)/patches/musl.2.patch
 	touch src/musl.CLONED
+
+src/musl2.CLONED:
+	mkdir -p src/
+	cd src/; git clone https://github.com/sunfishcode/reference-sysroot musl2 -b misc
+ifdef MUSL2_SHA
+	cd src/musl2; git checkout $(MUSL2_SHA)
+endif
+	cd src/musl2; patch -p 1 < $(ROOT_DIR)/patches/musl2.1.patch
+	touch src/musl2.CLONED
 
 src/compiler-rt.CLONED:
 	mkdir -p src/
@@ -85,10 +95,13 @@ build/llvm.BUILT: src/llvm.CLONED
 		install-llvm-ar \
 		install-llvm-ranlib \
 		install-llvm-dwarfdump \
+		install-clang-headers \
+		install-llvm-nm \
 		llvm-config
 	touch build/llvm.BUILT
 
 build/musl.BUILT: src/musl.CLONED build/llvm.BUILT
+	$(error not supported)
 	mkdir -p build/musl
 	cd build/musl; $(ROOT_DIR)/src/musl/configure \
 		CC=$(ROOT_DIR)/dist/bin/clang \
@@ -99,6 +112,14 @@ build/musl.BUILT: src/musl.CLONED build/llvm.BUILT
 	make -C build/musl -j 8 install CROSS_COMPILE=$(ROOT_DIR)/dist/bin/llvm-
 	cp src/musl/arch/wasm32/libc.imports sysroot/lib/
 	touch build/musl.BUILT
+
+build/musl2.BUILT: src/musl2.CLONED build/llvm.BUILT
+	cp -R $(ROOT_DIR)/src/musl2 build/musl2
+	make -C build/musl2 \
+		WASM_CC=$(ROOT_DIR)/dist/bin/clang
+	mkdir -p sysroot
+	cp -R build/musl2/sysroot/* sysroot
+	touch build/musl2.BUILT
 
 build/compiler-rt.BUILT: src/compiler-rt.CLONED build/llvm.BUILT
 	mkdir -p build/compiler-rt
@@ -120,7 +141,7 @@ build/compiler-rt.BUILT: src/compiler-rt.CLONED build/llvm.BUILT
 	cp -R $(ROOT_DIR)/build/llvm/lib/clang $(ROOT_DIR)/dist/lib/
 	touch build/compiler-rt.BUILT
 
-build/libcxx.BUILT: build/llvm.BUILT src/libcxx.CLONED build/compiler-rt.BUILT build/musl.BUILT
+build/libcxx.BUILT: build/llvm.BUILT src/libcxx.CLONED src/libcxxabi.CLONED build/compiler-rt.BUILT build/musl2.BUILT
 	mkdir -p build/libcxx
 	cd build/libcxx; cmake -G "Unix Makefiles" \
 		-DCMAKE_TOOLCHAIN_FILE=$(ROOT_DIR)/wasm_standalone.cmake \
@@ -180,7 +201,7 @@ sysroot/lib/wasmception.wasm: build/llvm.BUILT basics/wasmception.c
 		-c -O3 -g $(DEBUG_PREFIX_MAP) \
 		-o sysroot/lib/wasmception.wasm
 
-build: build/llvm.BUILT build/musl.BUILT build/compiler-rt.BUILT build/libcxxabi.BUILT build/libcxx.BUILT $(BASICS)
+build: build/llvm.BUILT build/musl2.BUILT build/compiler-rt.BUILT build/libcxxabi.BUILT build/libcxx.BUILT $(BASICS)
 
 strip: build/llvm.BUILT
 	cd dist/bin; strip clang-8 llc lld llvm-ar
